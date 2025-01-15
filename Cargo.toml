@@ -29,6 +29,8 @@ dotenv = "*"
 embassy-futures = "0.1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
+tokio = { version = "*", features = ["rt"] }
+paste = "1.0.15"
 
 [build-dependencies]
 embuild = "0.32.0"
