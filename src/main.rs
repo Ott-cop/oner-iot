@@ -1,5 +1,5 @@
 use device::Device;
-use esp_idf_svc::{eventloop::EspSystemEventLoop, hal::prelude::Peripherals, handle::RawHandle, mqtt::client::{EspMqttClient, EspMqttConnection, EventPayload, MessageId, MqttClientConfiguration, QoS}, nvs::EspDefaultNvsPartition, sys::{ gpio_mode_t_GPIO_MODE_INPUT_OUTPUT, EspError}, wifi::{BlockingWifi, ClientConfiguration, EspWifi}};
+use esp_idf_svc::{eventloop::EspSystemEventLoop, hal::prelude::Peripherals, mqtt::client::{EspMqttClient, EspMqttConnection, EventPayload, MessageId, MqttClientConfiguration, QoS}, nvs::EspDefaultNvsPartition, sys::{ gpio_mode_t_GPIO_MODE_INPUT_OUTPUT, EspError}, wifi::{BlockingWifi, ClientConfiguration, EspWifi}};
 use gpio::gpio::ControlGpio;
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -73,9 +73,10 @@ fn sub_receive(
     conn: Arc<Mutex<EspMqttConnection>>,
     _topic: Arc<String>,
     gpio: ControlGpio
-) -> Result<(), ()> {
+) -> () {
     let mut conn = conn.lock().unwrap();
     info!("MQTT Listening for messages");
+
     while let Ok(event) = conn.next() {
         if let EventPayload::Received{ id, topic, data, details } = event.payload() {
             let raw_json = str::from_utf8(data).unwrap();
@@ -93,7 +94,7 @@ fn sub_receive(
                 };
 
                 if topic == Some(_topic.as_str()) {
-                   
+                
                     if device_recv.state == true {
                         if let Err(err) = gpio.set_value(1) {
                             info!("{err}");
@@ -111,12 +112,10 @@ fn sub_receive(
                     info!("Topic setted: {} -> {}", device.id, device.state);   
                 }
             }
+        } else if let EventPayload::Error(err) = event.payload() {
+            info!("Problem to connect: {err}");
         }
     }
-
-    info!("Connection closed");
-
-    Ok(())
 }
 
 fn sub_publish(
@@ -127,18 +126,16 @@ fn sub_publish(
     loop {
         thread::sleep(Duration::from_millis(100));
         
-            
-        
-        loop {
-            if let Err(_) = client.subscribe(subscribe_topic.as_str(), QoS::AtMostOnce) {
-                info!("Failed to subscribe to topic {}", subscribe_topic);
-                thread::sleep(Duration::from_millis(5000));
-                continue;
-            } 
+        if let Ok(_) = client.subscribe(subscribe_topic.as_str(), QoS::AtMostOnce) {
+            break;
+        } else {
+            info!("Failed to subscribe to topic {}", subscribe_topic);
+            thread::sleep(Duration::from_millis(5000));
+            continue;
         }
-
-        info!("Subscribed to topic: {}", subscribe_topic);    
+          
     }
+    info!("Subscribed to topic: {}", subscribe_topic);  
     
 }
 
@@ -152,6 +149,7 @@ fn mqtt_create(
         client_id: Some(client_id),
         username: Some(client_id),
         password: Some(client_pass),
+        reconnect_timeout: Some(Duration::from_secs(5)),
         client_certificate: None,
         server_certificate: None,
         ..Default::default()
@@ -183,13 +181,13 @@ fn wifi_create(
         ..Default::default()
     })).unwrap();
 
-    wifi.start().unwrap();
+    wifi.start().expect("Unable to start wifi!");
     info!("Starting wifi...");
 
-    wifi.connect().unwrap();
+    wifi.connect().expect("Unable to connect to wifi");
     info!("Connecting to {}.", wifi_ssid);
 
-    wifi.wait_netif_up().unwrap();
+    wifi.wait_netif_up().expect("Timeout connection!");
     info!("Wifi Connected!");
 
     Ok(esp_wifi)
